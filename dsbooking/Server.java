@@ -2,15 +2,16 @@ package dsbooking;
 
 import java.net.*;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets; // <-- 新增：用于精确取 UTF-8 长度
+import java.nio.charset.StandardCharsets; // For UTF-8 byte length
 import java.time.Instant;
 import java.util.*;
 
+// UDP server for facility booking
 public class Server {
     private final DatagramSocket sock;
-    private final byte semantics;
+    private final byte semantics; // AMO or ALO
     private final Random rng;
-    private final double lossRate;
+    private final double lossRate; // Packet loss simulation
 
     private final Map<String, Facility> facilities = new HashMap<>();
     private final List<MonitorClient> monitors = new ArrayList<>();
@@ -24,17 +25,19 @@ public class Server {
         this.lossRate = lossRate;
         this.rng = new Random(seed);
 
-        // preload sample facilities
+        // Preload sample facilities
         facilities.put("RoomA", new Facility("RoomA"));
         facilities.put("RoomB", new Facility("RoomB"));
         facilities.put("LT1", new Facility("LT1"));
         System.out.println("Server listening UDP port " + port + " semantics=" + (semantics==Message.SEM_AMO?"AMO":"ALO") + " lossRate=" + lossRate);
     }
 
+    // Generate unique key for request deduplication
     private String key(InetAddress a, int p, long reqId) {
         return a.getHostAddress()+":"+p+":"+reqId;
     }
 
+    // Send reply with packet loss simulation
     private void send(InetAddress addr, int port, byte[] data) throws Exception {
         if (Util.shouldDrop(rng, lossRate)) {
             System.out.println("[DROP->] simulated drop of reply ("+data.length+" bytes) to "+addr+":"+port);
@@ -44,14 +47,20 @@ public class Server {
         sock.send(pkt);
     }
 
-    // -------- FIXED HERE ----------
+    // Broadcast updates to all monitors for this facility
     private void broadcastMonitorUpdates(String facilityName) throws Exception {
         Facility f = facilities.get(facilityName);
         if (f==null) return;
 
-        String text = "Weekly availability for "+facilityName+"\n"+f.weeklyBitmap();
+        // Build detailed availability text with specific time slots
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== ").append(facilityName).append(" Status ===\n");
+        for (int day = 0; day < 7; day++) {
+            sb.append(f.getDetailedAvailability(day));
+        }
+        String text = sb.toString();
 
-        // 计算两段字符串的 UTF-8 字节长度，并为两次 putStr 预留 4+len 空间
+        // Calculate UTF-8 byte lengths for two putStr calls
         byte[] facBytes = facilityName.getBytes(StandardCharsets.UTF_8);
         byte[] txtBytes = text.getBytes(StandardCharsets.UTF_8);
         ByteBuffer bb = ByteBuffer.allocate((4 + facBytes.length) + (4 + txtBytes.length));
@@ -83,7 +92,7 @@ public class Server {
                     Facility f = facilities.get(facility);
                     if (f==null) return error(req, "No such facility");
                     StringBuilder sb = new StringBuilder();
-                    sb.append("=== ").append(facility).append(" 预订情况 ===\n");
+                    sb.append("=== ").append(facility).append(" Status ===\n");
                     for (String d: daysCsv.split(",")) {
                         int di = Util.dayToIdx(d.trim());
                         sb.append(f.getDetailedAvailability(di));
@@ -104,12 +113,12 @@ public class Server {
                     Booking b = new Booking(id, facility, bt);
                     f.bookings.put(id, b);
                     broadcastMonitorSafe(facility);
-                    return ok(req, "CONFIRM# " + id); // 标签 + 空格 + 数字
+                    return ok(req, "CONFIRM# " + id); // tag + space + number
                 }
                 case Message.OP_CHANGE: {
-                    // 新语义：整体平移时间，保持原时长和星期
+                    // Shift booking time, keep duration and day
                     long id = bb.getLong();
-                    int shiftMinutes = bb.getInt(); // 正数向后移，负数向前移
+                    int shiftMinutes = bb.getInt(); // positive=forward, negative=backward
 
                     Booking b = null; Facility f=null;
                     for (Facility fx: facilities.values()) {
@@ -117,12 +126,12 @@ public class Server {
                     }
                     if (b==null || f==null) return error(req, "No such confirmation ID");
 
-                    // 计算新的开始和结束时间
+                    // Calculate new start and end times
                     int newS = b.t.startMin + shiftMinutes;
                     int newE = b.t.endMin + shiftMinutes;
                     int newDay = b.t.day;
-                    
-                    // 检查是否跨天
+
+                    // Check if crosses day boundary
                     while (newS < 0) {
                         newS += 1440;
                         newE += 1440;
@@ -133,20 +142,20 @@ public class Server {
                         newE -= 1440;
                         newDay++;
                     }
-                    
-                    // 检查星期是否有效
+
+                    // Check if day is valid
                     if (newDay < 0 || newDay > 6) {
                         return error(req, "Shift would move booking outside week range");
                     }
-                    
-                    // 检查是否超过当天24:00
+
+                    // Check if exceeds end of day
                     if (newE > 1440) {
                         return error(req, "Shift would exceed end of day");
                     }
 
                     BookingTime newBt = new BookingTime(newDay, newS, newE);
 
-                    // 先释放旧占用，检查新时段；若失败再恢复
+                    // Free old slot, check new slot; restore if failed
                     f.free(b.t);
                     if (!f.isFree(newBt)) {
                         f.occupy(b.t);
@@ -170,8 +179,8 @@ public class Server {
                 }
                 case Message.OP_EXTEND: { // non-idempotent: extend/shorten booking
                     long id = bb.getLong();
-                    int startDelta = bb.getInt(); // 开始时间调整（负数提前，正数延后）
-                    int endDelta = bb.getInt();   // 结束时间调整（负数缩短，正数延长）
+                    int startDelta = bb.getInt(); // start time adjust (negative=earlier, positive=later)
+                    int endDelta = bb.getInt();   // end time adjust (negative=shorten, positive=extend)
 
                     Booking b = null; Facility f=null;
                     for (Facility fx: facilities.values()) {
@@ -179,11 +188,11 @@ public class Server {
                     }
                     if (b==null || f==null) return error(req, "No such confirmation ID");
 
-                    // 计算新的开始和结束时间
+                    // Calculate new start and end times
                     int newS = b.t.startMin + startDelta;
                     int newE = b.t.endMin + endDelta;
-                    
-                    // 验证新时间的有效性
+
+                    // Validate new times
                     if (newS < 0) {
                         return error(req, "New start time would be before 00:00");
                     }
@@ -193,20 +202,20 @@ public class Server {
                     if (newS >= newE) {
                         return error(req, "New start time must be before end time");
                     }
-                    
+
                     BookingTime newBt = new BookingTime(b.t.day, newS, newE);
 
-                    // 先释放旧占用
+                    // Free old slot first
                     f.free(b.t);
-                    
-                    // 检查新时段是否可用
+
+                    // Check if new slot is available
                     if (!f.isFree(newBt)) {
-                        // 恢复旧占用并返回错误
+                        // Restore old slot and return error
                         f.occupy(b.t);
                         return error(req, "Unavailable for new period");
                     }
-                    
-                    // 应用新时段
+
+                    // Apply new slot
                     f.occupy(newBt);
                     b.t = newBt;
                     broadcastMonitorSafe(b.facility);

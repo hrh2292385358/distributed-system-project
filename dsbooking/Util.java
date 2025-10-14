@@ -30,7 +30,7 @@ public class Util {
         return h*60+m;
     }
     
-    // 将分钟数转换为HH:MM格式
+    // Convert minutes to HH:MM format
     public static String minToHm(int minutes) {
         if (minutes < 0 || minutes > 1440) {
             throw new IllegalArgumentException("Bad minutes: " + minutes);
