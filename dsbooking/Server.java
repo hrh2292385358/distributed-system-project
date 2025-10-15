@@ -78,13 +78,15 @@ public class Server {
             send(mc.addr, mc.port, dat);
         }
     }
-    // -------- END FIX -------------
 
+    // Handle incoming request and return reply bytes
     private byte[] handle(Message req, InetAddress from, int port) {
         try {
             ByteBuffer bb = ByteBuffer.wrap(req.payload==null?new byte[0]:req.payload);
             switch (req.opcode) {
                 case Message.OP_QUERY: {
+                    // Input: facility name, comma-separated days
+                    // Output: detailed availability showing booked and free time slots
                     String facility = Marshaller.getStr(bb);
                     String daysCsv  = Marshaller.getStr(bb);
                     Facility f = facilities.get(facility);
@@ -98,6 +100,8 @@ public class Server {
                     return ok(req, sb.toString());
                 }
                 case Message.OP_BOOK: {
+                    // Input: facility name, day, start time, end time
+                    // Output: confirmation with unique booking ID
                     String facility = Marshaller.getStr(bb);
                     int day = bb.getInt();
                     int s = bb.getInt();
@@ -111,12 +115,13 @@ public class Server {
                     Booking b = new Booking(id, facility, bt);
                     f.bookings.put(id, b);
                     broadcastMonitorSafe(facility);
-                    return ok(req, "CONFIRM# " + id); // tag + space + number
+                    return ok(req, "CONFIRM# " + id);
                 }
                 case Message.OP_CHANGE: {
-                    // Shift booking time, keep duration and day
+                    // Input: booking ID, shift minutes (positive=forward, negative=backward)
+                    // Output: booking time shifted, duration unchanged
                     long id = bb.getLong();
-                    int shiftMinutes = bb.getInt(); // positive=forward, negative=backward
+                    int shiftMinutes = bb.getInt();
 
                     Booking b = null; Facility f=null;
                     for (Facility fx: facilities.values()) {
@@ -124,12 +129,11 @@ public class Server {
                     }
                     if (b==null || f==null) return error(req, "No such confirmation ID");
 
-                    // Calculate new start and end times
                     int newS = b.t.startMin + shiftMinutes;
                     int newE = b.t.endMin + shiftMinutes;
                     int newDay = b.t.day;
 
-                    // Check if crosses day boundary
+                    // Handle day boundary crossing
                     while (newS < 0) {
                         newS += 1440;
                         newE += 1440;
@@ -141,19 +145,17 @@ public class Server {
                         newDay++;
                     }
 
-                    // Check if day is valid
                     if (newDay < 0 || newDay > 6) {
                         return error(req, "Shift would move booking outside week range");
                     }
 
-                    // Check if exceeds end of day
                     if (newE > 1440) {
                         return error(req, "Shift would exceed end of day");
                     }
 
                     BookingTime newBt = new BookingTime(newDay, newS, newE);
 
-                    // Free old slot, check new slot; restore if failed
+                    // Try to move booking
                     f.free(b.t);
                     if (!f.isFree(newBt)) {
                         f.occupy(b.t);
@@ -164,7 +166,9 @@ public class Server {
                     broadcastMonitorSafe(b.facility);
                     return ok(req, "CHANGED# " + id + " (shifted " + (shiftMinutes>=0?"+":"") + shiftMinutes + " min)");
                 }
-                case Message.OP_CANCEL: { // idempotent
+                case Message.OP_CANCEL: {
+                    // Input: booking ID
+                    // Output: cancellation confirmation (idempotent - same result on repeat)
                     long id = bb.getLong();
                     Booking b = null; Facility f=null;
                     for (Facility fx: facilities.values()) {
@@ -175,10 +179,12 @@ public class Server {
                     broadcastMonitorSafe(b.facility);
                     return ok(req, "CANCELED# " + id);
                 }
-                case Message.OP_EXTEND: { // non-idempotent: extend/shorten booking
+                case Message.OP_EXTEND: {
+                    // Input: booking ID, start delta, end delta
+                    // Output: extended/shortened booking (non-idempotent - different result on repeat)
                     long id = bb.getLong();
-                    int startDelta = bb.getInt(); // start time adjust (negative=earlier, positive=later)
-                    int endDelta = bb.getInt();   // end time adjust (negative=shorten, positive=extend)
+                    int startDelta = bb.getInt(); // negative=earlier, positive=later
+                    int endDelta = bb.getInt();   // negative=shorten, positive=extend
 
                     Booking b = null; Facility f=null;
                     for (Facility fx: facilities.values()) {
@@ -186,11 +192,9 @@ public class Server {
                     }
                     if (b==null || f==null) return error(req, "No such confirmation ID");
 
-                    // Calculate new start and end times
                     int newS = b.t.startMin + startDelta;
                     int newE = b.t.endMin + endDelta;
 
-                    // Validate new times
                     if (newS < 0) {
                         return error(req, "New start time would be before 00:00");
                     }
@@ -203,57 +207,53 @@ public class Server {
 
                     BookingTime newBt = new BookingTime(b.t.day, newS, newE);
 
-                    // Free old slot first
                     f.free(b.t);
 
-                    // Check if new slot is available
                     if (!f.isFree(newBt)) {
-                        // Restore old slot and return error
                         f.occupy(b.t);
                         return error(req, "Unavailable for new period");
                     }
 
-                    // Apply new slot
                     f.occupy(newBt);
                     b.t = newBt;
                     broadcastMonitorSafe(b.facility);
-                    
+
                     String msg = "EXTENDED# " + id + " (start " + (startDelta>=0?"+":"") + startDelta + " min, end " + (endDelta>=0?"+":"") + endDelta + " min)";
                     return ok(req, msg);
                 }
                 case Message.OP_MONITOR_REGISTER: {
+                    // Input: facility name, monitoring duration in seconds
+                    // Output: registration confirmation, then real-time updates
                     String facility = Marshaller.getStr(bb);
                     int seconds = bb.getInt();
                     Facility f = facilities.get(facility);
                     if (f==null) return error(req, "No such facility");
                     monitors.add(new MonitorClient(from, port, facility, Instant.now().plusSeconds(seconds)));
-                    // Push initial snapshot
                     broadcastMonitorSafe(facility);
                     return ok(req, "MONITORING# "+facility+" for "+seconds+"s");
                 }
                 case Message.OP_QUERY_BOOKING: {
+                    // Input: booking ID
+                    // Output: booking details (facility, day, time, duration)
                     long id = bb.getLong();
-                    
-                    // Search for booking across all facilities
-                    Booking b = null; 
+                    Booking b = null;
                     Facility f = null;
                     for (Facility fx: facilities.values()) {
-                        if (fx.bookings.containsKey(id)) { 
-                            b = fx.bookings.get(id); 
-                            f = fx; 
-                            break; 
+                        if (fx.bookings.containsKey(id)) {
+                            b = fx.bookings.get(id);
+                            f = fx;
+                            break;
                         }
                     }
-                    
+
                     if (b == null || f == null) {
                         return error(req, "No booking found with ID: " + id);
                     }
-                    
-                    // Format booking details
+
                     String dayName = Util.idxToDay(b.t.day);
                     String startTime = Util.minToHm(b.t.startMin);
                     String endTime = Util.minToHm(b.t.endMin);
-                    
+
                     StringBuilder sb = new StringBuilder();
                     sb.append("=== Booking Details ===\n");
                     sb.append("Confirmation ID: ").append(id).append("\n");
@@ -261,7 +261,7 @@ public class Server {
                     sb.append("Day: ").append(dayName).append("\n");
                     sb.append("Time: ").append(startTime).append(" - ").append(endTime).append("\n");
                     sb.append("Duration: ").append(b.t.endMin - b.t.startMin).append(" minutes");
-                    
+
                     return ok(req, sb.toString());
                 }
                 default:
@@ -272,12 +272,14 @@ public class Server {
         }
     }
 
+    // Safely broadcast monitor updates
     private void broadcastMonitorSafe(String facility) {
         try { broadcastMonitorUpdates(facility); } catch (Exception ex) {
             System.out.println("Monitor broadcast failed: "+ex);
         }
     }
 
+    // Build success reply
     private byte[] ok(Message req, String text) {
         byte[] payload = Marshaller.str(text);
         Message rep = new Message(req.semantics, req.opcode, req.reqId, payload);
@@ -285,13 +287,15 @@ public class Server {
         return Marshaller.pack(rep);
     }
 
+    // Build error reply
     private byte[] error(Message req, String text) {
         byte[] payload = Marshaller.str(text);
         Message rep = new Message(req.semantics, req.opcode, req.reqId, payload);
-        rep.flags = 1; // error flag
+        rep.flags = 1;
         return Marshaller.pack(rep);
     }
 
+    // Main server loop
     public void loop() throws Exception {
         byte[] buf = new byte[2048];
         while (true) {
@@ -326,6 +330,7 @@ public class Server {
         }
     }
 
+    // Main entry point
     public static void main(String[] args) throws Exception {
         if (args.length == 0) {
             args = new String[]{"5000", "AMO", "0.0", "42"};

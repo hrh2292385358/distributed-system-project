@@ -3,14 +3,14 @@ import java.util.Locale;
 import java.util.Random;
 
 public class Util {
+    // Convert day name to index
     public static int dayToIdx(String s) {
         s = s.trim().toLowerCase(Locale.ROOT);
-        
-        // Check if input is too short
+
         if (s.length() < 3) {
             throw new IllegalArgumentException("Invalid day format. Please use day names like: Mon, Tue, Wed, Thu, Fri, Sat, Sun");
         }
-        
+
         switch (s.substring(0,3)) {
             case "mon": return 0;
             case "tue": return 1;
@@ -22,10 +22,14 @@ public class Util {
             default: throw new IllegalArgumentException("Invalid day name: '" + s + "'. Please use: Mon, Tue, Wed, Thu, Fri, Sat, Sun");
         }
     }
+
+    // Convert index to day name
     public static String idxToDay(int d) {
         String[] dn={"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
         return dn[d];
     }
+
+    // Convert HH:MM to minutes
     public static int hmToMin(String hm) {
         String[] p = hm.split(":");
         int h = Integer.parseInt(p[0]);
@@ -33,8 +37,8 @@ public class Util {
         if (h<0||h>=24||m<0||m>=60) throw new IllegalArgumentException("Bad HH:MM");
         return h*60+m;
     }
-    
-    // Convert minutes to HH:MM format
+
+    // Convert minutes to HH:MM
     public static String minToHm(int minutes) {
         if (minutes < 0 || minutes > 1440) {
             throw new IllegalArgumentException("Bad minutes: " + minutes);
@@ -44,6 +48,7 @@ public class Util {
         return String.format("%02d:%02d", h, m);
     }
 
+    // Join byte arrays
     public static byte[] join(byte[]... parts) {
         int sum=0; for (byte[] p: parts) sum += p.length;
         ByteBuffer bb = ByteBuffer.allocate(sum);
@@ -51,6 +56,7 @@ public class Util {
         return bb.array();
     }
 
+    // Simulate packet drop
     public static boolean shouldDrop(Random rng, double rate) {
         if (rate<=0) return false;
         return rng.nextDouble() < rate;

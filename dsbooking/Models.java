@@ -5,10 +5,9 @@ import java.util.*;
 
 // Time slot for booking
 class BookingTime {
-    // day: 0=Mon ... 6=Sun; minute of day: 0..1439
-    final int day;
-    final int startMin; // inclusive
-    final int endMin;   // exclusive
+    final int day; // 0=Mon ... 6=Sun
+    final int startMin; // Inclusive
+    final int endMin;   // Exclusive
 
     BookingTime(int day, int startMin, int endMin) {
         this.day = day; this.startMin = startMin; this.endMin = endMin;
@@ -40,8 +39,7 @@ class Booking {
 // Facility with weekly schedule
 class Facility {
     final String name;
-    // minute-resolution availability: false=free, true=booked
-    final boolean[][] week = new boolean[7][1440];
+    final boolean[][] week = new boolean[7][1440]; // false=free, true=booked
     final Map<Long, Booking> bookings = new HashMap<>();
 
     Facility(String name) { this.name = name; }
@@ -65,7 +63,7 @@ class Facility {
         for(int m=bt.startMin; m<bt.endMin; m++) day[m]=false;
     }
 
-    // Get weekly summary (old format)
+    // Get weekly summary
     String weeklyBitmap() {
         StringBuilder sb = new StringBuilder();
         String[] dn = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
@@ -76,26 +74,23 @@ class Facility {
         }
         return sb.toString();
     }
-    
-    // Show detailed availability for a specific day
+
+    // Show detailed availability for specific day
     String getDetailedAvailability(int dayIdx) {
         StringBuilder sb = new StringBuilder();
         boolean[] day = week[dayIdx];
         String dayName = Util.idxToDay(dayIdx);
 
-        // Find all free and booked time slots
         List<String> freeSlots = new ArrayList<>();
         List<String> bookedSlots = new ArrayList<>();
 
         int i = 0;
         while (i < 1440) {
             if (day[i]) {
-                // Find booked slot start
                 int start = i;
                 while (i < 1440 && day[i]) i++;
                 bookedSlots.add(Util.minToHm(start) + "-" + Util.minToHm(i));
             } else {
-                // Find free slot start
                 int start = i;
                 while (i < 1440 && !day[i]) i++;
                 freeSlots.add(Util.minToHm(start) + "-" + Util.minToHm(i));

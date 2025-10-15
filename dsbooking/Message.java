@@ -1,16 +1,17 @@
+// Message protocol definition
 public class Message {
     public static final byte VERSION = 1;
-    public static final byte SEM_ALO = 0;
-    public static final byte SEM_AMO = 1;
+    public static final byte SEM_ALO = 0; // At-Least-Once
+    public static final byte SEM_AMO = 1; // At-Most-Once
 
     public static final byte OP_QUERY = 1;
     public static final byte OP_BOOK = 2;
     public static final byte OP_CHANGE = 3;
     public static final byte OP_MONITOR_REGISTER = 4;
-    public static final byte OP_MONITOR_UPDATE = 5; // server -> client
-    public static final byte OP_CANCEL = 6;   // idempotent (extra)
-    public static final byte OP_EXTEND = 7;   // non-idempotent: extend/shorten booking time
-    public static final byte OP_QUERY_BOOKING = 8;  // query booking details by ID
+    public static final byte OP_MONITOR_UPDATE = 5;
+    public static final byte OP_CANCEL = 6; // Idempotent
+    public static final byte OP_EXTEND = 7; // Non-idempotent
+    public static final byte OP_QUERY_BOOKING = 8;
 
     public static final byte FLAG_NONE = 0;
 
