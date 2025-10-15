@@ -1,5 +1,3 @@
-package dsbooking;
-
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets; // For UTF-8 byte length
@@ -233,6 +231,39 @@ public class Server {
                     broadcastMonitorSafe(facility);
                     return ok(req, "MONITORING# "+facility+" for "+seconds+"s");
                 }
+                case Message.OP_QUERY_BOOKING: {
+                    long id = bb.getLong();
+                    
+                    // Search for booking across all facilities
+                    Booking b = null; 
+                    Facility f = null;
+                    for (Facility fx: facilities.values()) {
+                        if (fx.bookings.containsKey(id)) { 
+                            b = fx.bookings.get(id); 
+                            f = fx; 
+                            break; 
+                        }
+                    }
+                    
+                    if (b == null || f == null) {
+                        return error(req, "No booking found with ID: " + id);
+                    }
+                    
+                    // Format booking details
+                    String dayName = Util.idxToDay(b.t.day);
+                    String startTime = Util.minToHm(b.t.startMin);
+                    String endTime = Util.minToHm(b.t.endMin);
+                    
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("=== Booking Details ===\n");
+                    sb.append("Confirmation ID: ").append(id).append("\n");
+                    sb.append("Facility: ").append(b.facility).append("\n");
+                    sb.append("Day: ").append(dayName).append("\n");
+                    sb.append("Time: ").append(startTime).append(" - ").append(endTime).append("\n");
+                    sb.append("Duration: ").append(b.t.endMin - b.t.startMin).append(" minutes");
+                    
+                    return ok(req, sb.toString());
+                }
                 default:
                     return error(req, "Unknown op");
             }
@@ -255,7 +286,7 @@ public class Server {
     }
 
     private byte[] error(Message req, String text) {
-        byte[] payload = Marshaller.str("ERROR: "+text);
+        byte[] payload = Marshaller.str(text);
         Message rep = new Message(req.semantics, req.opcode, req.reqId, payload);
         rep.flags = 1; // error flag
         return Marshaller.pack(rep);

@@ -1,4 +1,3 @@
-package dsbooking;
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.util.Random;
@@ -132,7 +131,7 @@ public class Client {
     private static void showReply(Message rep) {
         String s = Marshaller.getStr(ByteBuffer.wrap(rep.payload));
         if (rep.flags == 1) { // error
-            System.out.println("ERROR -> " + s);
+            System.out.println("ERROR: " + s);
             return;
         }
         String normalized = s.trim();
@@ -161,6 +160,7 @@ public class Client {
             System.out.println("4) Monitor (blocking)");
             System.out.println("5) Cancel booking (idempotent)");
             System.out.println("6) Extend/Shorten booking (non-idempotent)");
+            System.out.println("7) Query booking");
             System.out.println("0) Exit");
             System.out.print("> ");
             String choice = sc.nextLine().trim();
@@ -247,13 +247,20 @@ public class Client {
                         showReply(rep);
                         break;
                     }
+                    case "7": {
+                        System.out.print("Confirmation ID (code or full string): ");
+                        long id = parseId(sc.nextLine());
+                        Message rep = requestReply(Message.OP_QUERY_BOOKING, payloadId(id));
+                        showReply(rep);
+                        break;
+                    }
                     case "0":
                         System.out.println("Bye."); return;
                     default:
                         System.out.println("Invalid choice.");
                 }
             } catch (Exception e) {
-                System.out.println("Failed: "+e.getMessage());
+                System.out.println("ERROR: "+e.getMessage());
             }
         }
     }

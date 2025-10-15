@@ -1,5 +1,3 @@
-package dsbooking;
-
 public class Message {
     public static final byte VERSION = 1;
     public static final byte SEM_ALO = 0;
@@ -12,6 +10,7 @@ public class Message {
     public static final byte OP_MONITOR_UPDATE = 5; // server -> client
     public static final byte OP_CANCEL = 6;   // idempotent (extra)
     public static final byte OP_EXTEND = 7;   // non-idempotent: extend/shorten booking time
+    public static final byte OP_QUERY_BOOKING = 8;  // query booking details by ID
 
     public static final byte FLAG_NONE = 0;
 

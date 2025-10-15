@@ -1,5 +1,3 @@
-package dsbooking;
-
 import java.nio.ByteBuffer;
 import java.util.Locale;
 import java.util.Random;
@@ -7,6 +5,12 @@ import java.util.Random;
 public class Util {
     public static int dayToIdx(String s) {
         s = s.trim().toLowerCase(Locale.ROOT);
+        
+        // Check if input is too short
+        if (s.length() < 3) {
+            throw new IllegalArgumentException("Invalid day format. Please use day names like: Mon, Tue, Wed, Thu, Fri, Sat, Sun");
+        }
+        
         switch (s.substring(0,3)) {
             case "mon": return 0;
             case "tue": return 1;
@@ -15,7 +19,7 @@ public class Util {
             case "fri": return 4;
             case "sat": return 5;
             case "sun": return 6;
-            default: throw new IllegalArgumentException("Bad day: " + s);
+            default: throw new IllegalArgumentException("Invalid day name: '" + s + "'. Please use: Mon, Tue, Wed, Thu, Fri, Sat, Sun");
         }
     }
     public static String idxToDay(int d) {
